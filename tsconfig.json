@@ -11,6 +11,7 @@
     "baseUrl": "src",
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "jsx": "preserve"
   },
   "include": ["src/**/*"],
 }

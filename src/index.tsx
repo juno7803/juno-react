@@ -1,4 +1,4 @@
-import { Element, Fiber } from 'types';
+import { Element, Fiber, Hook, SetStateAction } from 'types';
 
 function createTextElement(text: string) {
   return {
@@ -32,14 +32,7 @@ function createDom(fiber: Fiber) {
       ? document.createTextNode('')
       : document.createElement(fiber.type as string);
 
-  const isProperty = (property: string) => property !== 'children';
-
-  Object.keys(fiber.props)
-    .filter(isProperty)
-    .forEach((prop) => {
-      // @ts-ignore
-      dom[prop] = fiber.props[prop];
-    });
+  updateDom(dom, { children: [] }, fiber.props);
 
   return dom;
 }
@@ -71,12 +64,20 @@ function updateDom(
   Object.keys(prevProps)
     .filter(isProperty)
     .filter(isGone(prevProps, nextProps))
-    .forEach(
-      (name) =>
-        // @ts-ignore
-        (dom[name] = '')
-    );
+    .forEach((name) => {
+      // @ts-ignore
+      dom[name] = '';
+    });
 
+  Object.keys(nextProps)
+    .filter(isProperty)
+    .filter(isNew(prevProps, nextProps))
+    .forEach((name) => {
+      // @ts-ignore
+      dom[name] = nextProps[name];
+    });
+
+  // Add Event listeners
   Object.keys(nextProps)
     .filter(isEvent)
     .filter(isNew(prevProps, nextProps))
@@ -87,7 +88,9 @@ function updateDom(
 }
 
 function commitRoot() {
+  deletions?.forEach(commitWork);
   commitWork((wipRoot as Fiber).child);
+  currentRoot = wipRoot;
   wipRoot = null;
 }
 
@@ -166,9 +169,56 @@ function performUnitOfWork(fiber: Fiber): Fiber | null {
   return null;
 }
 
+let wipFiber: Fiber | null = null;
+let hookIndex: number | null = null;
+
 function updateFunctionComponent(fiber: Fiber) {
+  wipFiber = fiber;
+  hookIndex = 0;
+  fiber.hooks = [];
+
   const children = [(fiber.type as Function)(fiber.props)];
   reconcileChildren(fiber, children);
+}
+
+function useState<T>(
+  initialValue: T
+): [T, (action: T | SetStateAction<T>) => void] {
+  const oldHook = wipFiber?.alternate?.hooks?.[hookIndex as number] as Hook<T>;
+
+  const hook: Hook<T> = {
+    state: oldHook ? oldHook.state : initialValue,
+    queue: [],
+  };
+
+  const isSetStateAction = (action): action is SetStateAction<T> => {
+    return action instanceof Function;
+  };
+
+  const actions = oldHook ? oldHook.queue : [];
+  actions.forEach((action) => {
+    if (isSetStateAction(action)) {
+      hook.state = action(hook.state);
+    } else {
+      hook.state = action;
+    }
+  });
+
+  const setState = (action: T | SetStateAction<T>) => {
+    hook.queue.push(action);
+    wipRoot = {
+      dom: currentRoot?.dom as Fiber['dom'],
+      props: currentRoot?.props as Fiber['props'],
+      alternate: currentRoot,
+    };
+    nextUnitOfWork = wipRoot;
+    deletions = [];
+  };
+
+  wipFiber?.hooks?.push(hook);
+  (hookIndex as number)++;
+
+  return [hook.state, setState];
 }
 
 function updateHostComponent(fiber: Fiber) {
@@ -251,12 +301,20 @@ window.requestIdleCallback(workLoop);
 const junoReact = {
   createElement,
   render,
+  useState,
 };
 
 function App({ name }: { name: string }) {
+  const [count, setCount] = junoReact.useState<number>(0);
+  const onClick = () => {
+    setCount((prevState) => prevState + 1);
+  };
+
   return (
     <div>
       <h1>함수형 컴포넌트 캡디 2 {name}</h1>
+      <p>{count}</p>
+      <button onClick={onClick}>increment</button>
     </div>
   );
 }

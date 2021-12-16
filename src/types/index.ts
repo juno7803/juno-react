@@ -14,6 +14,8 @@ export interface Fiber {
   parent?: Fiber;
   child?: Fiber;
   sibling?: Fiber;
+  effectTag?: 'PLACEMENT' | 'UPDATE' | 'DELETION';
+  alternate: Fiber | null;
   props: {
     children: Array<Element | Fiber>;
     [key: string]: any;

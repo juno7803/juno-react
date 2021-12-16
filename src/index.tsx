@@ -44,15 +44,31 @@ function createDom(fiber: Fiber) {
   return dom;
 }
 
+function commitRoot() {
+  commitWork((wipRoot as Fiber).child);
+  wipRoot = null;
+}
+
+function commitWork(fiber?: Fiber) {
+  if (!fiber) {
+    return;
+  }
+  fiber.parent!.dom!.appendChild(fiber.dom!);
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
+}
+
 let nextUnitOfWork: Fiber | null = null;
+let wipRoot: Fiber | null = null;
 
 function render(element: Element, container: HTMLElement) {
-  nextUnitOfWork = {
+  wipRoot = {
     dom: container,
     props: {
       children: [element],
     },
   };
+  nextUnitOfWork = wipRoot;
 }
 
 function performUnitOfWork(fiber: Fiber): Fiber | null {
@@ -60,12 +76,6 @@ function performUnitOfWork(fiber: Fiber): Fiber | null {
   if (!fiber.dom) {
     fiber.dom = createDom(fiber);
   }
-
-  if (fiber.parent) {
-    // parent 가 있으면 dom 도 있겠지만 type check 가 안되서 optional chaning을 한다
-    fiber.parent.dom?.appendChild(fiber.dom);
-  }
-
   // TODO create new fibers for children
   const childElements = fiber.props.children as Element[];
   let index = 0;
@@ -104,7 +114,6 @@ function performUnitOfWork(fiber: Fiber): Fiber | null {
     }
     nextFiber = nextFiber.parent;
   }
-
   return null;
 }
 
@@ -115,6 +124,10 @@ function workLoop(deadline: IdleDeadline) {
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
 
     shouldYield = deadline.timeRemaining() < 1;
+  }
+
+  if (!nextUnitOfWork && wipRoot) {
+    commitRoot();
   }
 
   window.requestIdleCallback(workLoop);
